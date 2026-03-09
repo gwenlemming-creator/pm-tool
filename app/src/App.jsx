@@ -1,3 +1,4 @@
+import * as XLSX from "xlsx";
 import { useState, useEffect } from "react";
 
 const SECTIONS = ["Today", "Tasks", "1:1 Agenda", "Roadmap Queue", "Recurring", "Notes"];
@@ -65,6 +66,60 @@ function exportRoadmapCSV(items) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a"); a.href = url; a.download = "roadmap-queue.csv"; a.click();
   URL.revokeObjectURL(url);
+}
+
+function exportAllXLSX(data) {
+  const wb = XLSX.utils.book_new();
+
+  // Tasks sheet
+  const taskRows = [["Title", "Priority", "Due Date", "Done", "Notes"]];
+  data.tasks.forEach(t => taskRows.push([
+    t.text,
+    t.priority,
+    t.due ? formatDate(t.due) : "",
+    t.done ? "Yes" : "No",
+    t.notes || ""
+  ]));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(taskRows), "Tasks");
+
+  // 1:1 Agenda sheet
+  const agendaRows = [["Item", "Discussed"]];
+  data.agenda.forEach(a => agendaRows.push([
+    a.text,
+    a.discussed ? "Yes" : "No"
+  ]));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(agendaRows), "1-1 Agenda");
+
+  // Roadmap Queue sheet
+  const roadmapRows = [["Item", "Notes", "Target Month", "Added to Roadmap", "Captured On"]];
+  data.roadmap.forEach(r => roadmapRows.push([
+    r.text,
+    r.notes || "",
+    r.targetMonth ? formatMonth(r.targetMonth) : "",
+    r.added ? "Yes" : "No",
+    r.createdAt || ""
+  ]));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(roadmapRows), "Roadmap Queue");
+
+  // Recurring sheet
+  const recurringRows = [["Task", "Frequency", "Last Done"]];
+  data.recurring.forEach(r => recurringRows.push([
+    r.text,
+    r.freq,
+    r.lastDone ? formatDate(r.lastDone) : "Never"
+  ]));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(recurringRows), "Recurring");
+
+  // Notes sheet
+  const noteRows = [["Title", "Body", "Created At"]];
+  data.notes.forEach(n => noteRows.push([
+    n.title || "",
+    n.body || "",
+    n.createdAt || ""
+  ]));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(noteRows), "Notes");
+
+  XLSX.writeFile(wb, "pm-dashboard.xlsx");
 }
 
 function ItemForm({ active, onAdd }) {
@@ -536,6 +591,9 @@ export default function App() {
         <div style={{ padding:"16px 20px", borderTop:"1px solid #334155" }}>
           <div style={{ color:"#475569", fontSize:11 }}>Total open</div>
           <div style={{ color:"#f1f5f9", fontWeight:700, fontSize:22 }}>{data.tasks.filter(t=>!t.done).length+data.agenda.filter(a=>!a.discussed).length+data.roadmap.filter(r=>!r.added).length}</div>
+          <button onClick={()=>exportAllXLSX(data)} style={{ marginTop:12, width:"100%", padding:"8px 0", background:"#334155", color:"#94a3b8", border:"1px solid #475569", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer" }}>
+            ↓ Download All
+          </button>
         </div>
       </div>
 
