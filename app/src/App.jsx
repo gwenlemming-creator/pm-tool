@@ -440,6 +440,18 @@ function TodayView({ data, onToggle, onDelete }) {
   const weekAgenda = data.agenda.filter(a=>!a.discussed&&isDueThisWeek(a.due));
   const recurringDue = data.recurring.filter(r=>r.lastDone!==today);
 
+  function upcomingMonths() {
+    const now = new Date();
+    const months = [];
+    for (let i = 0; i < 3; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      months.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);
+    }
+    return months;
+  }
+  const upcoming = upcomingMonths();
+  const upcomingRoadmap = data.roadmap.filter(r => !r.added && r.targetMonth && upcoming.includes(r.targetMonth));
+
   const overdueAll = [...overdueTasks.map(t=>({...t,_type:"task"})),...overdueAgenda.map(a=>({...a,_type:"agenda"}))].sort((a,b)=>daysDiff(a.due)-daysDiff(b.due));
   const weekAll = [...weekTasks.map(t=>({...t,_type:"task"})),...weekAgenda.map(a=>({...a,_type:"agenda"}))].sort((a,b)=>daysDiff(a.due)-daysDiff(b.due));
   const sourceLabel = t=>t._type==="task"?"Task":"1:1 Agenda";
@@ -457,6 +469,19 @@ function TodayView({ data, onToggle, onDelete }) {
       {overdueAll.length>0 && <Section title="Overdue" color="#dc2626" count={overdueAll.length}>{overdueAll.map(item=><ItemRow key={item.id} item={item} sourceLabel={sourceLabel(item)} onToggle={()=>onToggle(item._type,item.id)} onDelete={()=>onDelete(item._type,item.id)}/>)}</Section>}
       {weekAll.length>0 && <Section title="Due This Week" color="#d97706" count={weekAll.length}>{weekAll.map(item=><ItemRow key={item.id} item={item} sourceLabel={sourceLabel(item)} onToggle={()=>onToggle(item._type,item.id)} onDelete={()=>onDelete(item._type,item.id)}/>)}</Section>}
       {recurringDue.length>0 && <Section title="Recurring — Due Today" color="#6366f1" count={recurringDue.length}>{recurringDue.map(r=><ItemRow key={r.id} item={{...r,doneToday:r.lastDone===today}} badge={<span style={{background:"#f0f9ff",color:"#0369a1",fontSize:11,padding:"2px 8px",borderRadius:6,fontWeight:500,flexShrink:0}}>{r.freq}</span>} onToggle={()=>onToggle("recurring",r.id)} onDelete={()=>onDelete("recurring",r.id)}/>)}</Section>}
+      {upcomingRoadmap.length > 0 && (
+        <Section title="Coming Up on the Roadmap" color="#0d9488" count={upcomingRoadmap.length}>
+          {upcomingRoadmap.map(r => (
+            <div key={r.id} style={{ background:"white", borderRadius:10, marginBottom:8, border:"1px solid #e2e8f0", padding:"11px 14px", display:"flex", alignItems:"center", gap:10 }}>
+              <span style={{ flex:1, fontSize:14, color:"#1e293b" }}>{r.text}</span>
+              <span style={{ background:"#ede9fe", color:"#7c3aed", fontSize:11, padding:"2px 8px", borderRadius:6, fontWeight:500, flexShrink:0 }}>
+                {formatMonth(r.targetMonth)}
+              </span>
+              {r.notes && <span style={{ fontSize:12, color:"#94a3b8", flexShrink:0, maxWidth:200, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.notes}</span>}
+            </div>
+          ))}
+        </Section>
+      )}
     </div>
   );
 }
