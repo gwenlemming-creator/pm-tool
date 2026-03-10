@@ -440,23 +440,15 @@ function TodayView({ data, onToggle, onDelete }) {
   const weekAgenda = data.agenda.filter(a=>!a.discussed&&isDueThisWeek(a.due));
   const recurringDue = data.recurring.filter(r=>r.lastDone!==today);
 
-  function upcomingMonths() {
-    const now = new Date();
-    const months = [];
-    for (let i = 0; i < 3; i++) {
-      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
-      months.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);
-    }
-    return months;
-  }
-  const upcoming = upcomingMonths();
+  const now2 = new Date();
+  const upcoming = Array.from({length:3}, (_,i) => { const d = new Date(now2.getFullYear(), now2.getMonth()+i, 1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; });
   const upcomingRoadmap = data.roadmap.filter(r => !r.added && r.targetMonth && upcoming.includes(r.targetMonth));
 
   const overdueAll = [...overdueTasks.map(t=>({...t,_type:"task"})),...overdueAgenda.map(a=>({...a,_type:"agenda"}))].sort((a,b)=>daysDiff(a.due)-daysDiff(b.due));
   const weekAll = [...weekTasks.map(t=>({...t,_type:"task"})),...weekAgenda.map(a=>({...a,_type:"agenda"}))].sort((a,b)=>daysDiff(a.due)-daysDiff(b.due));
   const sourceLabel = t=>t._type==="task"?"Task":"1:1 Agenda";
 
-  if (overdueAll.length+weekAll.length+recurringDue.length===0) return (
+  if (overdueAll.length+weekAll.length+recurringDue.length+upcomingRoadmap.length===0) return (
     <div style={{ textAlign:"center", padding:"64px 0" }}>
       <div style={{ fontSize:40, marginBottom:16 }}>🎉</div>
       <div style={{ fontSize:16, fontWeight:600, color:"#1e293b", marginBottom:8 }}>You're all caught up!</div>
@@ -477,7 +469,7 @@ function TodayView({ data, onToggle, onDelete }) {
               <span style={{ background:"#ede9fe", color:"#7c3aed", fontSize:11, padding:"2px 8px", borderRadius:6, fontWeight:500, flexShrink:0 }}>
                 {formatMonth(r.targetMonth)}
               </span>
-              {r.notes && <span style={{ fontSize:12, color:"#94a3b8", flexShrink:0, maxWidth:200, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.notes}</span>}
+              {r.notes && <span title={r.notes} style={{ fontSize:12, color:"#94a3b8", flexShrink:0, maxWidth:200, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.notes}</span>}
             </div>
           ))}
         </Section>
@@ -627,7 +619,7 @@ export default function App() {
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:active==="Today"||active==="Notes"?0:16 }}>
             <div>
               <h1 style={{ margin:0, fontSize:20, fontWeight:700, color:"#1e293b" }}>{sectionIcons[active]} {active==="Today"?"Today's Focus":active}</h1>
-              {active==="Today"&&<p style={{margin:"4px 0 0",fontSize:13,color:"#94a3b8"}}>Overdue items, due this week, and recurring tasks</p>}
+              {active==="Today"&&<p style={{margin:"4px 0 0",fontSize:13,color:"#94a3b8"}}>Overdue items, due this week, recurring tasks, and upcoming roadmap</p>}
               {active==="Notes"&&<p style={{margin:"4px 0 0",fontSize:13,color:"#94a3b8"}}>{data.notes.length} note{data.notes.length!==1?"s":""} · click any note to edit</p>}
             </div>
             {active==="Roadmap Queue"&&(
