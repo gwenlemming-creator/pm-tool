@@ -509,16 +509,12 @@ function YearInReview({ yearData, onSave }) {
   const [images, setImages] = useState({});  // { monthIndex: { key: objectURL } }
   const fileInputRef = useRef(null);
   const [uploadingMonth, setUploadingMonth] = useState(null);
+  const allUrlsRef = useRef(new Set());
 
   useEffect(() => {
     return () => {
-      // Revoke all object URLs on unmount to prevent memory leaks
-      setImages(prev => {
-        Object.values(prev).forEach(monthUrls => {
-          Object.values(monthUrls).forEach(url => URL.revokeObjectURL(url));
-        });
-        return {};
-      });
+      allUrlsRef.current.forEach(url => URL.revokeObjectURL(url));
+      allUrlsRef.current.clear();
     };
   }, []);
 
@@ -538,16 +534,21 @@ function YearInReview({ yearData, onSave }) {
     const prefix = `${year}-${monthIdx}-`;
     try {
       const blobs = await getImages(prefix);
-      // Revoke any previously created URLs for this month
       setImages(prev => {
-        Object.values(prev[monthIdx] ?? {}).forEach(u => URL.revokeObjectURL(u));
-        return prev;
+        // Revoke old URLs for this month and remove from ref
+        Object.values(prev[monthIdx] ?? {}).forEach(u => {
+          URL.revokeObjectURL(u);
+          allUrlsRef.current.delete(u);
+        });
+        // Create new URLs and track them
+        const urls = {};
+        Object.entries(blobs).forEach(([k, blob]) => {
+          const url = URL.createObjectURL(blob);
+          allUrlsRef.current.add(url);
+          urls[k] = url;
+        });
+        return { ...prev, [monthIdx]: urls };
       });
-      const urls = {};
-      Object.entries(blobs).forEach(([k, blob]) => {
-        urls[k] = URL.createObjectURL(blob);
-      });
-      setImages(prev => ({ ...prev, [monthIdx]: urls }));
     } catch (e) {
       console.error("Failed to load images", e);
     }
@@ -572,6 +573,7 @@ function YearInReview({ yearData, onSave }) {
     try {
       await saveImage(imageKey, file);
       const url = URL.createObjectURL(file);
+      allUrlsRef.current.add(url);
       setImages(prev => ({
         ...prev,
         [idx]: { ...(prev[idx] ?? {}), [imageKey]: url }
@@ -588,6 +590,7 @@ function YearInReview({ yearData, onSave }) {
       setImages(prev => {
         const updated = { ...prev[monthIdx] };
         URL.revokeObjectURL(updated[imageKey]);
+        allUrlsRef.current.delete(updated[imageKey]);
         delete updated[imageKey];
         return { ...prev, [monthIdx]: updated };
       });
