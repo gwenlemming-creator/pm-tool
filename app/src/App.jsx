@@ -510,6 +510,18 @@ function YearInReview({ yearData, onSave }) {
   const fileInputRef = useRef(null);
   const [uploadingMonth, setUploadingMonth] = useState(null);
 
+  useEffect(() => {
+    return () => {
+      // Revoke all object URLs on unmount to prevent memory leaks
+      setImages(prev => {
+        Object.values(prev).forEach(monthUrls => {
+          Object.values(monthUrls).forEach(url => URL.revokeObjectURL(url));
+        });
+        return {};
+      });
+    };
+  }, []);
+
   // Load saved notes into local edit state when opening a month
   function toggleMonth(idx) {
     const key = String(idx);
@@ -526,6 +538,11 @@ function YearInReview({ yearData, onSave }) {
     const prefix = `${year}-${monthIdx}-`;
     try {
       const blobs = await getImages(prefix);
+      // Revoke any previously created URLs for this month
+      setImages(prev => {
+        Object.values(prev[monthIdx] ?? {}).forEach(u => URL.revokeObjectURL(u));
+        return prev;
+      });
       const urls = {};
       Object.entries(blobs).forEach(([k, blob]) => {
         urls[k] = URL.createObjectURL(blob);
