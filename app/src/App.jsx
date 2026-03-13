@@ -9,7 +9,7 @@ const priorityColor = { High: "#ef4444", Medium: "#f59e0b", Low: "#6b7280" };
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
 function generateId() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
-const defaultData = { tasks: [], agenda: [], roadmap: [], recurring: [], notes: [] };
+const defaultData = { tasks: [], agenda: [], roadmap: [], recurring: [], notes: [], yearInReview: {} };
 
 function formatDate(d) {
   if (!d) return null;
@@ -463,12 +463,12 @@ function TodayView({ data, onToggle, onDelete }) {
       {recurringDue.length>0 && <Section title="Recurring — Due Today" color="#6366f1" count={recurringDue.length}>{recurringDue.map(r=><ItemRow key={r.id} item={{...r,doneToday:r.lastDone===today}} badge={<span style={{background:"#f0f9ff",color:"#0369a1",fontSize:11,padding:"2px 8px",borderRadius:6,fontWeight:500,flexShrink:0}}>{r.freq}</span>} onToggle={()=>onToggle("recurring",r.id)} onDelete={()=>onDelete("recurring",r.id)}/>)}</Section>}
       {upcomingRoadmap.length > 0 && (
         <Section title="Coming Up on the Roadmap" color="#0d9488" count={upcomingRoadmap.length}>
-          {upcomingRoadmap.map(r => (
+          {[...upcomingRoadmap].sort((a,b)=>a.targetMonth.localeCompare(b.targetMonth)).map(r => (
             <div key={r.id} style={{ background:"white", borderRadius:10, marginBottom:8, border:"1px solid #e2e8f0", padding:"11px 14px", display:"flex", alignItems:"center", gap:10 }}>
-              <span style={{ flex:1, fontSize:14, color:"#1e293b" }}>{r.text}</span>
-              <span style={{ background:"#ede9fe", color:"#7c3aed", fontSize:11, padding:"2px 8px", borderRadius:6, fontWeight:500, flexShrink:0 }}>
+              <span style={{ background:"#ede9fe", color:"#7c3aed", fontSize:11, padding:"2px 8px", borderRadius:6, fontWeight:500, flexShrink:0, minWidth:80, textAlign:"center" }}>
                 {formatMonth(r.targetMonth)}
               </span>
+              <span style={{ flex:1, fontSize:14, color:"#1e293b" }}>{r.text}</span>
               {r.notes && <span title={r.notes} style={{ fontSize:12, color:"#94a3b8", flexShrink:0, maxWidth:200, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.notes}</span>}
             </div>
           ))}
@@ -637,7 +637,12 @@ export default function App() {
 
           {active==="Tasks"&&<>
             {PRIORITIES.map(p=>{
-              const items=data.tasks.filter(t=>t.priority===p&&(showDone||!t.done));
+              const items=data.tasks.filter(t=>t.priority===p&&(showDone||!t.done)).sort((a,b)=>{
+                if(a.due&&b.due) return a.due.localeCompare(b.due);
+                if(a.due) return -1;
+                if(b.due) return 1;
+                return 0;
+              });
               if(!items.length) return null;
               return <div key={p} style={{marginBottom:24}}>
                 <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
