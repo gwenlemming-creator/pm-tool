@@ -2,7 +2,7 @@ import * as XLSX from "xlsx";
 import { useState, useEffect, useRef } from "react";
 import { saveImage, getImages, deleteImage } from "./imageDb";
 
-const SECTIONS = ["Today", "Tasks", "1:1 Agenda", "Roadmap Queue", "Recurring", "Notes"];
+const SECTIONS = ["Today", "Tasks", "1:1 Agenda", "Roadmap Queue", "Recurring", "Notes", "Year In Review"];
 const PRIORITIES = ["High", "Medium", "Low"];
 const FREQUENCIES = ["Daily", "Weekly", "Biweekly", "Monthly"];
 const priorityColor = { High: "#ef4444", Medium: "#f59e0b", Low: "#6b7280" };
@@ -758,6 +758,19 @@ export default function App() {
   function deleteNote(id) { save({ ...data, notes: data.notes.filter(n=>n.id!==id) }); }
   function editRoadmap(updated) { save({ ...data, roadmap: data.roadmap.map(r=>r.id===updated.id?updated:r) }); }
 
+  function saveYearInReview(monthKey, notesText) {
+    const year = new Date().getFullYear().toString();
+    const prev = data.yearInReview ?? {};
+    const prevYear = prev[year] ?? {};
+    save({
+      ...data,
+      yearInReview: {
+        ...prev,
+        [year]: { ...prevYear, [monthKey]: { notes: notesText } }
+      }
+    });
+  }
+
   function handleToggle(type, id) {
     if (type==="task") save({...data,tasks:data.tasks.map(t=>t.id===id?{...t,done:!t.done}:t)});
     if (type==="agenda") save({...data,agenda:data.agenda.map(a=>a.id===id?{...a,discussed:!a.discussed}:a)});
@@ -783,7 +796,7 @@ export default function App() {
     Recurring: data.recurring.filter(r=>r.lastDone!==today).length,
     Notes: data.notes.length,
   };
-  const sectionIcons = { Today:"⚡", Tasks:"✓", "1:1 Agenda":"💬", "Roadmap Queue":"🗺️", Recurring:"🔁", Notes:"📝" };
+  const sectionIcons = { Today:"⚡", Tasks:"✓", "1:1 Agenda":"💬", "Roadmap Queue":"🗺️", Recurring:"🔁", Notes:"📝", "Year In Review":"🏆" };
 
   // Group roadmap by month
   const roadmapByMonth = () => {
@@ -850,7 +863,7 @@ export default function App() {
               </button>
             )}
           </div>
-          {active!=="Today"&&active!=="Notes"&&<div style={{marginTop:16}}><ItemForm active={active} onAdd={addItem}/></div>}
+          {active!=="Today"&&active!=="Notes"&&active!=="Year In Review"&&<div style={{marginTop:16}}><ItemForm active={active} onAdd={addItem}/></div>}
         </div>
 
         <div style={{ flex:1, overflowY:"auto", padding:"20px 28px" }}>
@@ -916,6 +929,13 @@ export default function App() {
             })}
             {data.recurring.length===0&&<Empty label="No recurring tasks yet"/>}
           </>}
+
+          {active==="Year In Review"&&(
+            <YearInReview
+              yearData={(data.yearInReview ?? {})[new Date().getFullYear().toString()]}
+              onSave={saveYearInReview}
+            />
+          )}
         </div>
       </div>
     </div>
