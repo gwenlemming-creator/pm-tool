@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { saveImage, getImages, deleteImage } from "./imageDb";
 
 const SECTIONS = ["Today", "Tasks", "1:1 Agenda", "Roadmap Queue", "Recurring", "Notes"];
 const PRIORITIES = ["High", "Medium", "Low"];
@@ -7,6 +8,7 @@ const FREQUENCIES = ["Daily", "Weekly", "Biweekly", "Monthly"];
 const priorityColor = { High: "#ef4444", Medium: "#f59e0b", Low: "#6b7280" };
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const FULL_MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
 function generateId() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
 const defaultData = { tasks: [], agenda: [], roadmap: [], recurring: [], notes: [], yearInReview: {} };
@@ -496,6 +498,204 @@ function Empty({ label }) {
     <div style={{ textAlign:"center", padding:"48px 0", color:"#94a3b8", fontSize:14 }}>
       <div style={{ fontSize:32, marginBottom:12 }}>📋</div>
       {label}
+    </div>
+  );
+}
+
+function YearInReview({ yearData, onSave }) {
+  const year = new Date().getFullYear().toString();
+  const [openMonth, setOpenMonth] = useState(null);
+  const [notes, setNotes] = useState({});
+  const [images, setImages] = useState({});  // { monthIndex: { key: objectURL } }
+  const fileInputRef = useRef(null);
+  const [uploadingMonth, setUploadingMonth] = useState(null);
+
+  // Load saved notes into local edit state when opening a month
+  function toggleMonth(idx) {
+    const key = String(idx);
+    if (openMonth === idx) {
+      setOpenMonth(null);
+    } else {
+      setOpenMonth(idx);
+      setNotes(prev => ({ ...prev, [key]: yearData?.[key]?.notes ?? "" }));
+      loadImages(idx);
+    }
+  }
+
+  async function loadImages(monthIdx) {
+    const prefix = `${year}-${monthIdx}-`;
+    try {
+      const blobs = await getImages(prefix);
+      const urls = {};
+      Object.entries(blobs).forEach(([k, blob]) => {
+        urls[k] = URL.createObjectURL(blob);
+      });
+      setImages(prev => ({ ...prev, [monthIdx]: urls }));
+    } catch (e) {
+      console.error("Failed to load images", e);
+    }
+  }
+
+  function handleSave(idx) {
+    const key = String(idx);
+    onSave(key, notes[key] ?? "");
+  }
+
+  function handleAddImage(monthIdx) {
+    setUploadingMonth(monthIdx);
+    fileInputRef.current.value = "";
+    fileInputRef.current.click();
+  }
+
+  async function handleFileChange(e) {
+    const file = e.target.files[0];
+    if (!file || uploadingMonth === null) return;
+    const idx = uploadingMonth;
+    const imageKey = `${year}-${idx}-${Date.now()}`;
+    try {
+      await saveImage(imageKey, file);
+      const url = URL.createObjectURL(file);
+      setImages(prev => ({
+        ...prev,
+        [idx]: { ...(prev[idx] ?? {}), [imageKey]: url }
+      }));
+    } catch (err) {
+      console.error("Failed to save image", err);
+    }
+    setUploadingMonth(null);
+  }
+
+  async function handleDeleteImage(monthIdx, imageKey) {
+    try {
+      await deleteImage(imageKey);
+      setImages(prev => {
+        const updated = { ...prev[monthIdx] };
+        URL.revokeObjectURL(updated[imageKey]);
+        delete updated[imageKey];
+        return { ...prev, [monthIdx]: updated };
+      });
+    } catch (err) {
+      console.error("Failed to delete image", err);
+    }
+  }
+
+  const monthHasContent = (idx) => {
+    const key = String(idx);
+    const hasNotes = !!yearData?.[key]?.notes;
+    const hasImages = Object.keys(images[idx] ?? {}).length > 0;
+    return hasNotes || hasImages;
+  };
+
+  return (
+    <div>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: "none" }}
+        onChange={handleFileChange}
+      />
+      {FULL_MONTHS.map((name, i) => {
+        const idx = i + 1;
+        const isOpen = openMonth === idx;
+        const hasContent = monthHasContent(idx);
+        const monthImages = images[idx] ?? {};
+        const imageCount = Object.keys(monthImages).length;
+
+        return (
+          <div key={idx} style={{ borderBottom: "1px solid #e2e8f0" }}>
+            {/* Header row */}
+            <div
+              onClick={() => toggleMonth(idx)}
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                padding: "14px 20px", cursor: "pointer",
+                background: isOpen ? "#eff6ff" : "#f8fafc",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <span style={{ fontWeight: 600, color: isOpen ? "#1e40af" : "#1e293b", width: 110 }}>{name}</span>
+                <span style={{ fontSize: 12, color: hasContent ? "#3b82f6" : "#94a3b8" }}>
+                  {hasContent
+                    ? [imageCount > 0 && `${imageCount} image${imageCount !== 1 ? "s" : ""}`, yearData?.[String(idx)]?.notes && "notes added"].filter(Boolean).join(" · ")
+                    : "No entries yet"}
+                </span>
+              </div>
+              <span style={{ color: isOpen ? "#3b82f6" : "#94a3b8", fontSize: 13 }}>{isOpen ? "▼" : "▶"}</span>
+            </div>
+
+            {/* Expanded content */}
+            {isOpen && (
+              <div style={{ padding: 20, background: "white", borderTop: "1px solid #dbeafe" }}>
+                {/* Photos */}
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 10 }}>
+                    Photos
+                  </div>
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+                    {Object.entries(monthImages).map(([key, url]) => (
+                      <div key={key} style={{ position: "relative" }}>
+                        <img
+                          src={url}
+                          alt=""
+                          style={{ height: 80, maxWidth: 140, borderRadius: 6, objectFit: "cover", display: "block" }}
+                        />
+                        <button
+                          onClick={() => handleDeleteImage(idx, key)}
+                          title="Remove"
+                          style={{
+                            position: "absolute", top: 4, right: 4,
+                            background: "rgba(0,0,0,0.55)", color: "white",
+                            border: "none", borderRadius: "50%", width: 20, height: 20,
+                            fontSize: 11, cursor: "pointer", lineHeight: "20px", padding: 0, textAlign: "center"
+                          }}
+                        >×</button>
+                      </div>
+                    ))}
+                    <div
+                      onClick={() => handleAddImage(idx)}
+                      style={{
+                        width: 80, height: 80, border: "2px dashed #cbd5e1", borderRadius: 6,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: 11, color: "#94a3b8", cursor: "pointer", flexShrink: 0
+                      }}
+                    >+ Add</div>
+                  </div>
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
+                    Notes &amp; Wins
+                  </div>
+                  <textarea
+                    value={notes[String(idx)] ?? ""}
+                    onChange={e => setNotes(prev => ({ ...prev, [String(idx)]: e.target.value }))}
+                    placeholder="What went well? What shipped? What are you proud of?"
+                    rows={4}
+                    style={{
+                      width: "100%", boxSizing: "border-box", padding: "10px 12px",
+                      border: "1px solid #e2e8f0", borderRadius: 6, fontSize: 13,
+                      color: "#475569", lineHeight: 1.6, resize: "vertical", outline: "none",
+                      fontFamily: "inherit"
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+                  <button
+                    onClick={() => handleSave(idx)}
+                    style={{
+                      padding: "7px 18px", background: "#6366f1", color: "white",
+                      border: "none", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer"
+                    }}
+                  >Save</button>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
