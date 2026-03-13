@@ -534,20 +534,22 @@ function YearInReview({ yearData, onSave }) {
     const prefix = `${year}-${monthIdx}-`;
     try {
       const blobs = await getImages(prefix);
+
+      // Create URLs outside the updater so they are created exactly once
+      const newUrls = {};
+      Object.entries(blobs).forEach(([k, blob]) => {
+        newUrls[k] = URL.createObjectURL(blob);
+      });
+
       setImages(prev => {
         // Revoke old URLs for this month and remove from ref
         Object.values(prev[monthIdx] ?? {}).forEach(u => {
           URL.revokeObjectURL(u);
           allUrlsRef.current.delete(u);
         });
-        // Create new URLs and track them
-        const urls = {};
-        Object.entries(blobs).forEach(([k, blob]) => {
-          const url = URL.createObjectURL(blob);
-          allUrlsRef.current.add(url);
-          urls[k] = url;
-        });
-        return { ...prev, [monthIdx]: urls };
+        // Track new URLs in ref
+        Object.values(newUrls).forEach(u => allUrlsRef.current.add(u));
+        return { ...prev, [monthIdx]: newUrls };
       });
     } catch (e) {
       console.error("Failed to load images", e);
