@@ -1,4 +1,7 @@
 import * as XLSX from "xlsx";
+import { auth, provider, db } from "./firebase";
+import { signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
+import { ref, set, onValue } from "firebase/database";
 import { useState, useEffect, useRef } from "react";
 import { saveImage, getImages, deleteImage } from "./imageDb";
 
@@ -727,6 +730,9 @@ export default function App() {
   const [data, setData] = useState(defaultData);
   const [loaded, setLoaded] = useState(false);
   const [showDone, setShowDone] = useState(false);
+  const [user, setUser] = useState(null);
+  const [syncStatus, setSyncStatus] = useState("idle");
+  const isSavingRef = useRef(false);
 
   useEffect(() => {
     try {
@@ -736,9 +742,30 @@ export default function App() {
     setLoaded(true);
   }, []);
 
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (firebaseUser) => {
+      setUser(firebaseUser);
+    });
+    return () => unsub();
+  }, []);
+
   function save(next) {
     setData(next);
     try { localStorage.setItem("pm-dashboard-v2", JSON.stringify(next)); } catch {}
+  }
+
+  async function handleSignIn() {
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (e) {
+      console.error("Sign-in failed", e);
+    }
+  }
+
+  function handleSignOut() {
+    if (!window.confirm("Sign out? Your data stays on this device but won't sync until you sign back in.")) return;
+    signOut(auth);
+    setSyncStatus("idle");
   }
 
   function addItem({ text, priority, freq, due, targetMonth, notes }) {
