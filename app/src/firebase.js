@@ -3,13 +3,13 @@ import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import { getDatabase } from "firebase/database";
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  apiKey: "AIzaSyAk00nBbaK5qWUp-lxQxkfjzK5vCsqZwqQ",
+  authDomain: "pm-command-center-e7c76.firebaseapp.com",
+  databaseURL: "https://pm-command-center-e7c76-default-rtdb.firebaseio.com",
+  projectId: "pm-command-center-e7c76",
+  storageBucket: "pm-command-center-e7c76.firebasestorage.app",
+  messagingSenderId: "308933010289",
+  appId: "1:308933010289:web:70178897117a28fc1c4cd0",
 };
 
 const app = initializeApp(firebaseConfig);
