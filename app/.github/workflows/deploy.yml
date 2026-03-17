@@ -33,6 +33,11 @@ jobs:
         run: npm ci
         working-directory: app
 
+      - name: Debug secrets
+        run: echo "API_KEY length=${#VITE_FIREBASE_API_KEY}"
+        env:
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+
       - name: Build
         run: npm run build
         working-directory: app
