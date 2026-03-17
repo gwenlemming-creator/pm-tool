@@ -1354,7 +1354,7 @@ export default function App() {
               </button>
             )}
           </div>
-          {active!=="Today"&&active!=="Notes"&&active!=="Year In Review"&&<div style={{marginTop:16}}><ItemForm active={active} onAdd={addItem}/></div>}
+          {active!=="Today"&&active!=="Notes"&&active!=="Year In Review"&&active!=="PTO"&&<div style={{marginTop:16}}><ItemForm active={active} onAdd={addItem}/></div>}
         </div>
 
         <div style={{ flex:1, overflowY:"auto", padding:"20px 28px" }}>
