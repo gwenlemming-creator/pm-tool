@@ -749,9 +749,50 @@ export default function App() {
     return () => unsub();
   }, []);
 
+  useEffect(() => {
+    if (!user) return;
+
+    const dbRef = ref(db, `users/${user.uid}/pm-dashboard-v2`);
+
+    const unsub = onValue(dbRef, (snapshot) => {
+      if (isSavingRef.current) return;
+
+      const val = snapshot.val();
+      if (val) {
+        setData(val);
+        try { localStorage.setItem("pm-dashboard-v2", JSON.stringify(val)); } catch {}
+        setSyncStatus("synced");
+      } else {
+        const raw = localStorage.getItem("pm-dashboard-v2");
+        const localData = raw ? JSON.parse(raw) : null;
+        if (localData) {
+          isSavingRef.current = true;
+          set(dbRef, localData)
+            .then(() => { setSyncStatus("synced"); })
+            .catch(() => { setSyncStatus("error"); })
+            .finally(() => { isSavingRef.current = false; });
+        } else {
+          setSyncStatus("synced");
+        }
+      }
+    });
+
+    return () => unsub();
+  }, [user]);
+
   function save(next) {
     setData(next);
     try { localStorage.setItem("pm-dashboard-v2", JSON.stringify(next)); } catch {}
+
+    if (user) {
+      const dbRef = ref(db, `users/${user.uid}/pm-dashboard-v2`);
+      isSavingRef.current = true;
+      setSyncStatus("saving");
+      set(dbRef, next)
+        .then(() => { setSyncStatus("synced"); })
+        .catch(() => { setSyncStatus("error"); })
+        .finally(() => { isSavingRef.current = false; });
+    }
   }
 
   async function handleSignIn() {
