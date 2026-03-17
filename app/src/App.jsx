@@ -860,15 +860,16 @@ function PTOView({ pto, onSave }) {
     });
   }
 
+  function openSettings() {
+    setSettingsForm({ ...pto.settings });
+    setShowSettings(true);
+  }
+
   function toggleFloating() {
     const currentYear = new Date().getFullYear();
     const currentUsed = getEffectiveFloatingUsed(pto.floatingHolidays);
-    if (!pto.floatingHolidays || pto.floatingHolidays.calendarYear !== currentYear) {
-      onSave({ ...pto, floatingHolidays: { calendarYear: currentYear, total: 2, used: 1 } });
-      return;
-    }
     const next = currentUsed >= 2 ? 0 : currentUsed + 1;
-    onSave({ ...pto, floatingHolidays: { ...pto.floatingHolidays, used: next } });
+    onSave({ ...pto, floatingHolidays: { calendarYear: currentYear, total: 2, used: next } });
   }
 
   const cardStyle = { background: "white", border: "1px solid #e2e8f0", borderRadius: 12, padding: 16, textAlign: "center" };
@@ -880,7 +881,7 @@ function PTOView({ pto, onSave }) {
     <div>
       {/* Header row with settings link */}
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
-        <button onClick={() => setShowSettings(!showSettings)}
+        <button onClick={() => showSettings ? setShowSettings(false) : openSettings()}
           style={{ background: "none", border: "none", color: "#6366f1", fontSize: 13, cursor: "pointer", padding: 0 }}>
           {showSettings ? "Hide Settings" : "Edit Settings"}
         </button>
