@@ -5,7 +5,7 @@ import { ref, set, onValue } from "firebase/database";
 import { useState, useEffect, useRef } from "react";
 import { saveImage, getImages, deleteImage } from "./imageDb";
 
-const SECTIONS = ["Today", "Tasks", "1:1 Agenda", "Roadmap Queue", "Recurring", "Notes", "Year In Review"];
+const SECTIONS = ["Today", "Tasks", "1:1 Agenda", "Roadmap Queue", "Recurring", "Notes", "Year In Review", "PTO"];
 const PRIORITIES = ["High", "Medium", "Low"];
 const FREQUENCIES = ["Daily", "Weekly", "Biweekly", "Monthly"];
 const priorityColor = { High: "#ef4444", Medium: "#f59e0b", Low: "#6b7280" };
@@ -14,7 +14,21 @@ const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov
 const FULL_MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
 function generateId() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
-const defaultData = { tasks: [], agenda: [], roadmap: [], recurring: [], notes: [], yearInReview: {} };
+const defaultData = {
+  tasks: [], agenda: [], roadmap: [], recurring: [], notes: [], yearInReview: {},
+  pto: {
+    settings: {
+      planYearStart: "2025-07-01",
+      planYearEnd: "2026-06-30",
+      accrualStartDate: "2025-07-11",
+      accrualRate: 7.39,
+      carryoverHours: 40,
+    },
+    log: [],
+    planned: [],
+    floatingHolidays: { calendarYear: 2026, total: 2, used: 0 },
+  }
+};
 
 function formatDate(d) {
   if (!d) return null;
