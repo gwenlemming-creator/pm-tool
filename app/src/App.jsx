@@ -71,6 +71,76 @@ function formatMonth(val) {
   return `${MONTHS[parseInt(m)-1]} ${y}`;
 }
 
+// PTO helpers
+const HOLIDAYS_BY_YEAR = {
+  2026: [
+    { date: "2026-01-01", name: "New Year's Day" },
+    { date: "2026-05-25", name: "Memorial Day" },
+    { date: "2026-07-03", name: "Independence Day (observed)" },
+    { date: "2026-09-07", name: "Labor Day" },
+    { date: "2026-11-26", name: "Thanksgiving" },
+    { date: "2026-11-27", name: "Day after Thanksgiving" },
+    { date: "2026-12-25", name: "Christmas Day" },
+  ],
+};
+
+function computePTOBalance(pto) {
+  const { settings, log, planned } = pto;
+  const { planYearStart, planYearEnd, accrualStartDate, accrualRate, carryoverHours } = settings;
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Count elapsed biweekly pay periods (pay date <= today)
+  let periods = 0;
+  let payDate = new Date(accrualStartDate + "T00:00:00");
+  const todayDate = new Date(today + "T00:00:00");
+  const planEnd = new Date(planYearEnd + "T00:00:00");
+  while (payDate <= todayDate && payDate <= planEnd) {
+    periods++;
+    payDate = new Date(payDate.getTime() + 14 * 24 * 60 * 60 * 1000);
+  }
+
+  const maxAccrual = 192; // 24 days × 8 hrs
+  const totalAccrued = Math.min(carryoverHours + periods * accrualRate, maxAccrual);
+
+  // Only count log entries within the current plan year
+  const planYearLogHours = log
+    .filter(e => e.date >= planYearStart && e.date <= planYearEnd)
+    .reduce((sum, e) => sum + (e.hours || 0), 0);
+
+  const available = totalAccrued - planYearLogHours;
+  const plannedHours = planned.reduce((sum, e) => sum + (e.hours || 0), 0);
+  const availableAfterPlanned = available - plannedHours;
+
+  // Semi-annual usage (using ALL log entries for the half-year date ranges)
+  const half1Start = planYearStart; // e.g. "2025-07-01"
+  const half1End = planYearStart.slice(0, 4) + "-12-31";
+  const half2Start = planYearEnd.slice(0, 4) + "-01-01"; // e.g. "2026-01-01"
+  const half2End = planYearEnd; // e.g. "2026-06-30"
+
+  const half1Used = log
+    .filter(e => e.date >= half1Start && e.date <= half1End)
+    .reduce((sum, e) => sum + (e.hours || 0), 0);
+  const half2Used = log
+    .filter(e => e.date >= half2Start && e.date <= half2End)
+    .reduce((sum, e) => sum + (e.hours || 0), 0);
+
+  return {
+    totalAccrued,
+    planYearLogHours,
+    available,
+    plannedHours,
+    availableAfterPlanned,
+    half1: { label: `Jul–Dec ${planYearStart.slice(0, 4)}`, used: half1Used, target: 96 },
+    half2: { label: `Jan–Jun ${planYearEnd.slice(0, 4)}`, used: half2Used, target: 96 },
+  };
+}
+
+function getEffectiveFloatingUsed(floatingHolidays) {
+  const currentYear = new Date().getFullYear();
+  if (!floatingHolidays || floatingHolidays.calendarYear !== currentYear) return 0;
+  return floatingHolidays.used || 0;
+}
+
 function exportRoadmapCSV(items) {
   const rows = [["Item", "Notes", "Target Month", "Added to Roadmap", "Captured On"]];
   items.forEach(r => rows.push([
