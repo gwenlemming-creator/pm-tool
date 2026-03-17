@@ -5,7 +5,7 @@ import { ref, set, onValue } from "firebase/database";
 import { useState, useEffect, useRef } from "react";
 import { saveImage, getImages, deleteImage } from "./imageDb";
 
-const SECTIONS = ["Today", "Tasks", "1:1 Agenda", "Roadmap Queue", "Recurring", "Notes", "Year In Review"];
+const SECTIONS = ["Today", "Tasks", "1:1 Agenda", "Roadmap Queue", "Recurring", "Notes", "Year In Review", "PTO"];
 const PRIORITIES = ["High", "Medium", "Low"];
 const FREQUENCIES = ["Daily", "Weekly", "Biweekly", "Monthly"];
 const priorityColor = { High: "#ef4444", Medium: "#f59e0b", Low: "#6b7280" };
@@ -14,7 +14,21 @@ const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov
 const FULL_MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
 function generateId() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
-const defaultData = { tasks: [], agenda: [], roadmap: [], recurring: [], notes: [], yearInReview: {} };
+const defaultData = {
+  tasks: [], agenda: [], roadmap: [], recurring: [], notes: [], yearInReview: {},
+  pto: {
+    settings: {
+      planYearStart: "2025-07-01",
+      planYearEnd: "2026-06-30",
+      accrualStartDate: "2025-07-11",
+      accrualRate: 7.39,
+      carryoverHours: 40,
+    },
+    log: [],
+    planned: [],
+    floatingHolidays: { calendarYear: 2026, total: 2, used: 0 },
+  }
+};
 
 function formatDate(d) {
   if (!d) return null;
@@ -55,6 +69,76 @@ function formatMonth(val) {
   if (!val) return null;
   const [y, m] = val.split("-");
   return `${MONTHS[parseInt(m)-1]} ${y}`;
+}
+
+// PTO helpers
+const HOLIDAYS_BY_YEAR = {
+  2026: [
+    { date: "2026-01-01", name: "New Year's Day" },
+    { date: "2026-05-25", name: "Memorial Day" },
+    { date: "2026-07-03", name: "Independence Day (observed)" },
+    { date: "2026-09-07", name: "Labor Day" },
+    { date: "2026-11-26", name: "Thanksgiving" },
+    { date: "2026-11-27", name: "Day after Thanksgiving" },
+    { date: "2026-12-25", name: "Christmas Day" },
+  ],
+};
+
+function computePTOBalance(pto) {
+  const { settings, log, planned } = pto;
+  const { planYearStart, planYearEnd, accrualStartDate, accrualRate, carryoverHours } = settings;
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Count elapsed biweekly pay periods (pay date <= today)
+  let periods = 0;
+  let payDate = new Date(accrualStartDate + "T00:00:00");
+  const todayDate = new Date(today + "T00:00:00");
+  const planEnd = new Date(planYearEnd + "T00:00:00");
+  while (payDate <= todayDate && payDate <= planEnd) {
+    periods++;
+    payDate = new Date(payDate.getTime() + 14 * 24 * 60 * 60 * 1000);
+  }
+
+  const maxAccrual = 192; // 24 days × 8 hrs
+  const totalAccrued = Math.min(carryoverHours + periods * accrualRate, maxAccrual);
+
+  // Only count log entries within the current plan year
+  const planYearLogHours = log
+    .filter(e => e.date >= planYearStart && e.date <= planYearEnd)
+    .reduce((sum, e) => sum + (e.hours || 0), 0);
+
+  const available = totalAccrued - planYearLogHours;
+  const plannedHours = planned.reduce((sum, e) => sum + (e.hours || 0), 0);
+  const availableAfterPlanned = available - plannedHours;
+
+  // Semi-annual usage (using ALL log entries for the half-year date ranges)
+  const half1Start = planYearStart; // e.g. "2025-07-01"
+  const half1End = planYearStart.slice(0, 4) + "-12-31";
+  const half2Start = planYearEnd.slice(0, 4) + "-01-01"; // e.g. "2026-01-01"
+  const half2End = planYearEnd; // e.g. "2026-06-30"
+
+  const half1Used = log
+    .filter(e => e.date >= half1Start && e.date <= half1End)
+    .reduce((sum, e) => sum + (e.hours || 0), 0);
+  const half2Used = log
+    .filter(e => e.date >= half2Start && e.date <= half2End)
+    .reduce((sum, e) => sum + (e.hours || 0), 0);
+
+  return {
+    totalAccrued,
+    planYearLogHours,
+    available,
+    plannedHours,
+    availableAfterPlanned,
+    half1: { label: `Jul–Dec ${planYearStart.slice(0, 4)}`, used: half1Used, target: 96 },
+    half2: { label: `Jan–Jun ${planYearEnd.slice(0, 4)}`, used: half2Used, target: 96 },
+  };
+}
+
+function getEffectiveFloatingUsed(floatingHolidays) {
+  const currentYear = new Date().getFullYear();
+  if (!floatingHolidays || floatingHolidays.calendarYear !== currentYear) return 0;
+  return floatingHolidays.used || 0;
 }
 
 function exportRoadmapCSV(items) {
@@ -725,6 +809,317 @@ function YearInReview({ yearData, onSave }) {
   );
 }
 
+function PTOView({ pto, onSave }) {
+  const bal = computePTOBalance(pto);
+  const floatingUsed = getEffectiveFloatingUsed(pto.floatingHolidays);
+  const [showSettings, setShowSettings] = useState(false);
+  const [settingsForm, setSettingsForm] = useState({ ...pto.settings });
+  const [showLogForm, setShowLogForm] = useState(false);
+  const [showPlanForm, setShowPlanForm] = useState(false);
+  const [logForm, setLogForm] = useState({ date: "", hours: 8, label: "" });
+  const [planForm, setPlanForm] = useState({ date: "", hours: 8, label: "" });
+
+  function saveSetting(key, val) {
+    setSettingsForm(prev => ({ ...prev, [key]: val }));
+  }
+
+  function commitSettings() {
+    onSave({ ...pto, settings: { ...settingsForm, accrualRate: parseFloat(settingsForm.accrualRate), carryoverHours: parseFloat(settingsForm.carryoverHours) } });
+    setShowSettings(false);
+  }
+
+  function addLog() {
+    if (!logForm.date || !logForm.hours) return;
+    const entry = { id: generateId(), date: logForm.date, hours: parseFloat(logForm.hours), label: logForm.label.trim() || null };
+    onSave({ ...pto, log: [...pto.log, entry] });
+    setLogForm({ date: "", hours: 8, label: "" });
+    setShowLogForm(false);
+  }
+
+  function addPlanned() {
+    if (!planForm.date || !planForm.hours) return;
+    const entry = { id: generateId(), date: planForm.date, hours: parseFloat(planForm.hours), label: planForm.label.trim() || null };
+    onSave({ ...pto, planned: [...pto.planned, entry] });
+    setPlanForm({ date: "", hours: 8, label: "" });
+    setShowPlanForm(false);
+  }
+
+  function deleteLog(id) {
+    onSave({ ...pto, log: pto.log.filter(e => e.id !== id) });
+  }
+
+  function deletePlanned(id) {
+    onSave({ ...pto, planned: pto.planned.filter(e => e.id !== id) });
+  }
+
+  function convertToUsed(entry) {
+    onSave({
+      ...pto,
+      planned: pto.planned.filter(e => e.id !== entry.id),
+      log: [...pto.log, { ...entry }],
+    });
+  }
+
+  function openSettings() {
+    setSettingsForm({ ...pto.settings });
+    setShowSettings(true);
+  }
+
+  function toggleFloating() {
+    const currentYear = new Date().getFullYear();
+    const currentUsed = getEffectiveFloatingUsed(pto.floatingHolidays);
+    const next = currentUsed >= 2 ? 0 : currentUsed + 1;
+    onSave({ ...pto, floatingHolidays: { calendarYear: currentYear, total: 2, used: next } });
+  }
+
+  const cardStyle = { background: "white", border: "1px solid #e2e8f0", borderRadius: 12, padding: 16, textAlign: "center" };
+  const labelStyle = { fontSize: 11, fontWeight: 600, letterSpacing: ".05em", color: "#64748b", textTransform: "uppercase", marginBottom: 6 };
+  const bigNumStyle = { fontSize: 28, fontWeight: 700, color: "#0f172a" };
+  const subStyle = { fontSize: 12, color: "#64748b", marginTop: 4 };
+
+  return (
+    <div>
+      {/* Header row with settings link */}
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+        <button onClick={() => showSettings ? setShowSettings(false) : openSettings()}
+          style={{ background: "none", border: "none", color: "#6366f1", fontSize: 13, cursor: "pointer", padding: 0 }}>
+          {showSettings ? "Hide Settings" : "Edit Settings"}
+        </button>
+      </div>
+
+      {/* Settings inline form */}
+      {showSettings && (
+        <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 12, padding: 16, marginBottom: 16 }}>
+          <div style={{ fontWeight: 600, fontSize: 13, color: "#374151", marginBottom: 12 }}>Plan Year Settings</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            {[
+              ["Plan Year Start", "planYearStart", "date"],
+              ["Plan Year End", "planYearEnd", "date"],
+              ["First Accrual Date", "accrualStartDate", "date"],
+              ["Accrual Rate (hrs/period)", "accrualRate", "number"],
+              ["Carryover Hours", "carryoverHours", "number"],
+            ].map(([label, key, type]) => (
+              <div key={key} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <label style={{ fontSize: 12, color: "#64748b", fontWeight: 500 }}>{label}</label>
+                <input type={type} value={settingsForm[key]}
+                  onChange={e => saveSetting(key, e.target.value)}
+                  style={{ padding: "7px 10px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 13, color: "#374151", outline: "none" }} />
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+            <button onClick={() => setShowSettings(false)}
+              style={{ padding: "6px 14px", background: "#f1f5f9", color: "#64748b", border: "none", borderRadius: 8, fontSize: 13, cursor: "pointer" }}>Cancel</button>
+            <button onClick={commitSettings}
+              style={{ padding: "6px 14px", background: "#6366f1", color: "white", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Save Settings</button>
+          </div>
+        </div>
+      )}
+
+      {/* Stat cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 16 }}>
+        <div style={cardStyle}>
+          <div style={labelStyle}>Available</div>
+          <div style={bigNumStyle}>{bal.available.toFixed(1)}<span style={{ fontSize: 14, color: "#64748b", marginLeft: 2 }}>hrs</span></div>
+          <div style={subStyle}>{(bal.available / 8).toFixed(1)} days</div>
+        </div>
+        <div style={cardStyle}>
+          <div style={labelStyle}>Used This Year</div>
+          <div style={bigNumStyle}>{bal.planYearLogHours.toFixed(1)}<span style={{ fontSize: 14, color: "#64748b", marginLeft: 2 }}>hrs</span></div>
+          <div style={subStyle}>{(bal.planYearLogHours / 8).toFixed(1)} days</div>
+        </div>
+        <div style={cardStyle}>
+          <div style={labelStyle}>Available After Planned</div>
+          <div style={{ ...bigNumStyle, color: bal.availableAfterPlanned < 0 ? "#dc2626" : "#0f172a" }}>
+            {bal.availableAfterPlanned.toFixed(1)}<span style={{ fontSize: 14, color: "#64748b", marginLeft: 2 }}>hrs</span>
+          </div>
+          <div style={{ ...subStyle, color: bal.plannedHours > 0 ? "#f59e0b" : "#64748b" }}>
+            {bal.plannedHours > 0 ? `${bal.plannedHours.toFixed(1)} hrs planned` : "no planned PTO"}
+          </div>
+        </div>
+        <div style={cardStyle}>
+          <div style={labelStyle}>Floating Holidays</div>
+          <div style={{ display: "flex", justifyContent: "center", gap: 8, margin: "8px 0" }}>
+            {[0, 1].map(i => (
+              <div key={i} onClick={toggleFloating} style={{
+                width: 28, height: 28, borderRadius: "50%", cursor: "pointer",
+                background: i < floatingUsed ? "#6366f1" : "#e2e8f0",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                color: i < floatingUsed ? "white" : "#94a3b8", fontSize: 12, fontWeight: 700
+              }}>{i + 1}</div>
+            ))}
+          </div>
+          <div style={subStyle}>{floatingUsed} of 2 used</div>
+        </div>
+      </div>
+
+      {/* Semi-annual progress bars */}
+      <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 12, padding: 16, marginBottom: 16 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 12 }}>
+          Semi-Annual Usage Targets <span style={{ fontWeight: 400, color: "#9ca3af", fontSize: 12 }}>(96 hrs each half)</span>
+        </div>
+        {[bal.half1, bal.half2].map((half, i) => {
+          const pct = Math.min((half.used / half.target) * 100, 100);
+          const met = half.used >= half.target;
+          return (
+            <div key={i} style={{ marginBottom: i === 0 ? 12 : 0 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#6b7280", marginBottom: 4 }}>
+                <span>{half.label}</span>
+                <span style={{ color: met ? "#16a34a" : "#f59e0b", fontWeight: 600 }}>
+                  {met ? `${half.used.toFixed(1)} hrs used ✓` : `${half.used.toFixed(1)} hrs used of ${half.target}`}
+                </span>
+              </div>
+              <div style={{ background: "#f1f5f9", borderRadius: 999, height: 8 }}>
+                <div style={{ background: met ? "#16a34a" : "#f59e0b", height: 8, borderRadius: 999, width: `${pct}%`, transition: "width 0.3s" }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Carryover info banner */}
+      {bal.available > pto.settings.carryoverHours && (
+        <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10, padding: "12px 16px", marginBottom: 16, fontSize: 13, color: "#1e40af", display: "flex", alignItems: "center", gap: 10 }}>
+          <span>ℹ️</span>
+          <span>{pto.settings.carryoverHours}-hr rollover reserve: your <strong>true spendable balance is {(bal.available - pto.settings.carryoverHours).toFixed(1)} hrs</strong> (keeping {pto.settings.carryoverHours} hrs for {new Date(pto.settings.planYearEnd.slice(0,7) + "-01T00:00:00").toLocaleDateString("en-US",{month:"long",day:"numeric"})} carryover)</span>
+        </div>
+      )}
+
+      {/* Planned PTO + PTO Log side by side */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+
+        {/* Planned PTO */}
+        <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 12, padding: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>Planned PTO</div>
+            <button onClick={() => setShowPlanForm(!showPlanForm)}
+              style={{ background: "#f1f5f9", border: "none", borderRadius: 6, padding: "5px 10px", fontSize: 12, color: "#475569", cursor: "pointer" }}>
+              + Add Planned
+            </button>
+          </div>
+          {showPlanForm && (
+            <div style={{ background: "#fefce8", border: "1px solid #fde68a", borderRadius: 8, padding: 12, marginBottom: 10 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <input type="date" value={planForm.date} onChange={e => setPlanForm(p => ({ ...p, date: e.target.value }))}
+                  style={{ padding: "6px 10px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 13, color: "#374151", outline: "none" }} />
+                <input type="number" value={planForm.hours} min="1" max="40"
+                  onChange={e => setPlanForm(p => ({ ...p, hours: e.target.value }))}
+                  style={{ width: 70, padding: "6px 10px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 13, color: "#374151", outline: "none" }} />
+                <input placeholder="Label (optional)" value={planForm.label}
+                  onChange={e => setPlanForm(p => ({ ...p, label: e.target.value }))}
+                  style={{ flex: 1, minWidth: 100, padding: "6px 10px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 13, color: "#374151", outline: "none" }} />
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
+                <button onClick={() => setShowPlanForm(false)}
+                  style={{ padding: "5px 12px", background: "#f1f5f9", color: "#64748b", border: "none", borderRadius: 8, fontSize: 12, cursor: "pointer" }}>Cancel</button>
+                <button onClick={addPlanned}
+                  style={{ padding: "5px 12px", background: "#6366f1", color: "white", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Save</button>
+              </div>
+            </div>
+          )}
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {pto.planned.slice().sort((a, b) => a.date.localeCompare(b.date)).map(entry => (
+              <div key={entry.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 10px", background: "#fefce8", border: "1px solid #fde68a", borderRadius: 8 }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: "#1e293b" }}>{entry.label || formatDate(entry.date)}</div>
+                  <div style={{ fontSize: 12, color: "#92400e" }}>{entry.label ? formatDate(entry.date) + " · " : ""}{entry.hours} hrs</div>
+                </div>
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <button onClick={() => convertToUsed(entry)} title="Convert to Used"
+                    style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", borderRadius: 6, padding: "3px 8px", fontSize: 11, cursor: "pointer" }}>✓ Used</button>
+                  <button onClick={() => deletePlanned(entry.id)}
+                    style={{ background: "none", border: "none", color: "#94a3b8", fontSize: 16, cursor: "pointer", lineHeight: 1 }}>×</button>
+                </div>
+              </div>
+            ))}
+            {pto.planned.length === 0 && (
+              <div style={{ fontSize: 12, color: "#94a3b8", textAlign: "center", padding: 12, border: "1px dashed #e2e8f0", borderRadius: 8 }}>
+                Add future time off to see projected balance
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* PTO Log */}
+        <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 12, padding: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>PTO Log</div>
+            <button onClick={() => setShowLogForm(!showLogForm)}
+              style={{ background: "#f1f5f9", border: "none", borderRadius: 6, padding: "5px 10px", fontSize: 12, color: "#475569", cursor: "pointer" }}>
+              + Log PTO
+            </button>
+          </div>
+          {showLogForm && (
+            <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 12, marginBottom: 10 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <input type="date" value={logForm.date} onChange={e => setLogForm(p => ({ ...p, date: e.target.value }))}
+                  style={{ padding: "6px 10px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 13, color: "#374151", outline: "none" }} />
+                <input type="number" value={logForm.hours} min="1" max="40"
+                  onChange={e => setLogForm(p => ({ ...p, hours: e.target.value }))}
+                  style={{ width: 70, padding: "6px 10px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 13, color: "#374151", outline: "none" }} />
+                <input placeholder="Label (optional)" value={logForm.label}
+                  onChange={e => setLogForm(p => ({ ...p, label: e.target.value }))}
+                  style={{ flex: 1, minWidth: 100, padding: "6px 10px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 13, color: "#374151", outline: "none" }} />
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
+                <button onClick={() => setShowLogForm(false)}
+                  style={{ padding: "5px 12px", background: "#f1f5f9", color: "#64748b", border: "none", borderRadius: 8, fontSize: 12, cursor: "pointer" }}>Cancel</button>
+                <button onClick={addLog}
+                  style={{ padding: "5px 12px", background: "#6366f1", color: "white", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Save</button>
+              </div>
+            </div>
+          )}
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 280, overflowY: "auto" }}>
+            {pto.log.slice().sort((a, b) => b.date.localeCompare(a.date)).map(entry => (
+              <div key={entry.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 10px", background: "#f8fafc", borderRadius: 8 }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: "#1e293b" }}>{entry.label || formatDate(entry.date)}</div>
+                  {entry.label && <div style={{ fontSize: 12, color: "#64748b" }}>{formatDate(entry.date)}</div>}
+                </div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>{entry.hours} hrs</span>
+                  <button onClick={() => deleteLog(entry.id)}
+                    style={{ background: "none", border: "none", color: "#94a3b8", fontSize: 16, cursor: "pointer", lineHeight: 1 }}>×</button>
+                </div>
+              </div>
+            ))}
+            {pto.log.length === 0 && (
+              <div style={{ fontSize: 12, color: "#94a3b8", textAlign: "center", padding: 12 }}>No PTO logged yet</div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Company Holidays */}
+      <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 12, padding: 16, marginTop: 16 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 12 }}>
+          Company Holidays {new Date().getFullYear()}
+        </div>
+        {HOLIDAYS_BY_YEAR[new Date().getFullYear()] ? (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8 }}>
+            {HOLIDAYS_BY_YEAR[new Date().getFullYear()].map(h => (
+              <div key={h.date} style={{ padding: 8, background: "#f8fafc", borderRadius: 8, fontSize: 12 }}>
+                <div style={{ color: "#64748b" }}>{formatDate(h.date)}</div>
+                <div style={{ fontWeight: 500, color: "#1e293b" }}>{h.name}</div>
+              </div>
+            ))}
+            {[0, 1].map(i => (
+              <div key={`float-${i}`} onClick={toggleFloating} style={{
+                padding: 8, background: "#eef2ff", border: "1px solid #c7d2fe", borderRadius: 8, fontSize: 12, cursor: "pointer"
+              }}>
+                <div style={{ color: "#6366f1" }}>Floating #{i + 1}</div>
+                <div style={{ fontWeight: 500, color: "#4338ca" }}>{i < floatingUsed ? "Used ✓" : "Available"}</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ color: "#94a3b8", fontSize: 13 }}>Holiday dates for {new Date().getFullYear()} not yet configured.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [active, setActive] = useState("Today");
   const [data, setData] = useState(defaultData);
@@ -864,7 +1259,7 @@ export default function App() {
     Recurring: data.recurring.filter(r=>r.lastDone!==today).length,
     Notes: data.notes.length,
   };
-  const sectionIcons = { Today:"⚡", Tasks:"✓", "1:1 Agenda":"💬", "Roadmap Queue":"🗺️", Recurring:"🔁", Notes:"📝", "Year In Review":"🏆" };
+  const sectionIcons = { Today:"⚡", Tasks:"✓", "1:1 Agenda":"💬", "Roadmap Queue":"🗺️", Recurring:"🔁", Notes:"📝", "Year In Review":"🏆", PTO:"🌴" };
 
   // Group roadmap by month
   const roadmapByMonth = () => {
@@ -960,7 +1355,7 @@ export default function App() {
               </button>
             )}
           </div>
-          {active!=="Today"&&active!=="Notes"&&active!=="Year In Review"&&<div style={{marginTop:16}}><ItemForm active={active} onAdd={addItem}/></div>}
+          {active!=="Today"&&active!=="Notes"&&active!=="Year In Review"&&active!=="PTO"&&<div style={{marginTop:16}}><ItemForm active={active} onAdd={addItem}/></div>}
         </div>
 
         <div style={{ flex:1, overflowY:"auto", padding:"20px 28px" }}>
@@ -1031,6 +1426,12 @@ export default function App() {
             <YearInReview
               yearData={(data.yearInReview ?? {})[new Date().getFullYear().toString()]}
               onSave={saveYearInReview}
+            />
+          )}
+          {active === "PTO" && (
+            <PTOView
+              pto={data.pto || defaultData.pto}
+              onSave={nextPto => save({ ...data, pto: nextPto })}
             />
           )}
         </div>
