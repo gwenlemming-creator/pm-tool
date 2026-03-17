@@ -934,7 +934,7 @@ function PTOView({ pto, onSave }) {
             {bal.availableAfterPlanned.toFixed(1)}<span style={{ fontSize: 14, color: "#64748b", marginLeft: 2 }}>hrs</span>
           </div>
           <div style={{ ...subStyle, color: bal.plannedHours > 0 ? "#f59e0b" : "#64748b" }}>
-            {bal.plannedHours > 0 ? `${bal.plannedHours} hrs planned` : "no planned PTO"}
+            {bal.plannedHours > 0 ? `${bal.plannedHours.toFixed(1)} hrs planned` : "no planned PTO"}
           </div>
         </div>
         <div style={cardStyle}>
@@ -966,7 +966,7 @@ function PTOView({ pto, onSave }) {
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#6b7280", marginBottom: 4 }}>
                 <span>{half.label}</span>
                 <span style={{ color: met ? "#16a34a" : "#f59e0b", fontWeight: 600 }}>
-                  {met ? `${half.used} hrs used ✓` : `${half.used.toFixed(1)} hrs used of ${half.target}`}
+                  {met ? `${half.used.toFixed(1)} hrs used ✓` : `${half.used.toFixed(1)} hrs used of ${half.target}`}
                 </span>
               </div>
               <div style={{ background: "#f1f5f9", borderRadius: 999, height: 8 }}>
@@ -978,10 +978,10 @@ function PTOView({ pto, onSave }) {
       </div>
 
       {/* Carryover info banner */}
-      {bal.available > 40 && (
+      {bal.available > pto.settings.carryoverHours && (
         <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10, padding: "12px 16px", marginBottom: 16, fontSize: 13, color: "#1e40af", display: "flex", alignItems: "center", gap: 10 }}>
           <span>ℹ️</span>
-          <span>40-hr rollover reserve: your <strong>true spendable balance is {(bal.available - 40).toFixed(1)} hrs</strong> (keeping 40 hrs for July 1 carryover)</span>
+          <span>{pto.settings.carryoverHours}-hr rollover reserve: your <strong>true spendable balance is {(bal.available - pto.settings.carryoverHours).toFixed(1)} hrs</strong> (keeping {pto.settings.carryoverHours} hrs for {new Date(pto.settings.planYearEnd.slice(0,7) + "-01T00:00:00").toLocaleDateString("en-US",{month:"long",day:"numeric"})} carryover)</span>
         </div>
       )}
 
