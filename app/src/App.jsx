@@ -909,6 +909,28 @@ export default function App() {
           ))}
         </nav>
         <div style={{ padding:"16px 20px", borderTop:"1px solid #334155" }}>
+          {user && (
+            <div style={{ fontSize:10, color: syncStatus==="error" ? "#f87171" : "#475569", marginBottom:8 }}>
+              {syncStatus==="saving" && "⟳ Saving..."}
+              {syncStatus==="synced" && "✓ Synced"}
+              {syncStatus==="error" && "⚠ Sync failed — check connection"}
+            </div>
+          )}
+          {user ? (
+            <div style={{ marginBottom:8 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+                {user.photoURL && <img src={user.photoURL} alt="" style={{ width:22, height:22, borderRadius:"50%" }} />}
+                <span style={{ color:"#94a3b8", fontSize:11, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{user.email}</span>
+              </div>
+              <button onClick={handleSignOut} style={{ width:"100%", padding:"6px 0", background:"transparent", color:"#475569", border:"1px solid #334155", borderRadius:8, fontSize:11, cursor:"pointer" }}>
+                Sign out
+              </button>
+            </div>
+          ) : (
+            <button onClick={handleSignIn} style={{ marginBottom:8, width:"100%", padding:"8px 0", background:"#3b82f6", color:"white", border:"none", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer" }}>
+              Sign in with Google
+            </button>
+          )}
           <div style={{ color:"#475569", fontSize:11 }}>Total open</div>
           <div style={{ color:"#f1f5f9", fontWeight:700, fontSize:22 }}>{data.tasks.filter(t=>!t.done).length+data.agenda.filter(a=>!a.discussed).length+data.roadmap.filter(r=>!r.added).length}</div>
           <button onClick={()=>exportAllXLSX(data)} style={{ marginTop:12, width:"100%", padding:"8px 0", background:"#334155", color:"#94a3b8", border:"1px solid #475569", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer" }}>
