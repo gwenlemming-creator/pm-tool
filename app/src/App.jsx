@@ -846,6 +846,13 @@ export default function App() {
           <button onClick={()=>exportAllXLSX(data)} style={{ marginTop:12, width:"100%", padding:"8px 0", background:"#334155", color:"#94a3b8", border:"1px solid #475569", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer" }}>
             ↓ Download All
           </button>
+          <button onClick={()=>{ const a=document.createElement('a'); a.href='data:application/json;charset=utf-8,'+encodeURIComponent(JSON.stringify(data,null,2)); a.download='pm-dashboard.json'; a.click(); }} style={{ marginTop:6, width:"100%", padding:"8px 0", background:"#334155", color:"#94a3b8", border:"1px solid #475569", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer" }}>
+            ↓ Export JSON
+          </button>
+          <label style={{ marginTop:6, display:"block", width:"100%", padding:"8px 0", background:"#334155", color:"#94a3b8", border:"1px solid #475569", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer", textAlign:"center", boxSizing:"border-box" }}>
+            ↑ Import JSON
+            <input type="file" accept=".json" style={{ display:"none" }} onChange={e=>{ const file=e.target.files[0]; if(!file) return; const reader=new FileReader(); reader.onload=ev=>{ try{ const parsed=JSON.parse(ev.target.result); save(parsed); alert('Data imported successfully!'); }catch{ alert('Invalid JSON file.'); } }; reader.readAsText(file); e.target.value=''; }} />
+          </label>
         </div>
       </div>
 
