@@ -1430,7 +1430,14 @@ export default function App() {
           )}
           {active === "PTO" && (
             <PTOView
-              pto={data.pto || defaultData.pto}
+              pto={{
+                ...defaultData.pto,
+                ...(data.pto || {}),
+                settings: { ...defaultData.pto.settings, ...(data.pto?.settings || {}) },
+                log: data.pto?.log ?? [],
+                planned: data.pto?.planned ?? [],
+                floatingHolidays: data.pto?.floatingHolidays ?? defaultData.pto.floatingHolidays,
+              }}
               onSave={nextPto => save({ ...data, pto: nextPto })}
             />
           )}
